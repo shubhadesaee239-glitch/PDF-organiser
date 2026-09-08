@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PDF Page Organizer</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 24px 16px;
+    background: #fafafa;
+    color: #1a1a1a;
+  }
+  h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  p.subtitle {
+    color: #666;
+    font-size: 14px;
+    margin-top: 0;
+    margin-bottom: 20px;
+  }
+  #upload-zone {
+    border: 2px dashed #bbb;
+    border-radius: 8px;
+    padding: 32px 16px;
+    text-align: center;
+    cursor: pointer;
+    background: #fff;
+  }
+  #upload-zone p {
+    color: #666;
+    font-size: 14px;
+    margin: 8px 0 0;
+  }
+  #error-msg {
+    display: none;
+    font-size: 13px;
+    color: #c0392b;
+    margin: 8px 0 0;
+  }
+  #pages-panel {
+    display: none;
+    margin-top: 20px;
+  }
+  .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .panel-header span {
+    font-size: 13px;
+    color: #666;
+  }
+  .panel-header button {
+    font-size: 13px;
+    padding: 6px 10px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background: #fff;
+    margin-left: 6px;
+  }
+  #page-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 360px;
+    overflow-y: auto;
+  }
+  .page-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    background: #fff;
+  }
+  .page-row span {
+    flex: 1;
+    font-size: 14px;
+  }
+  .page-row button {
+    border: 1px solid #ccc;
+    background: #fff;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 14px;
+  }
+  .page-row button:disabled {
+    opacity: 0.3;
+  }
+  #download-btn {
+    width: 100%;
+    margin-top: 16px;
+    background: #1a1a1a;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .hint {
+    font-size: 12px;
+    color: #888;
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+
+<h1>PDF page organizer</h1>
+<p class="subtitle">Choose, reorder, or remove pages from a PDF — free, works right in your browser.</p>
+
+<div id="upload-zone">
+  <p><strong>Tap to choose a PDF file</strong></p>
+  <input type="file" id="file-input" accept="application/pdf" style="display:none;" />
+</div>
+
+<p id="error-msg"></p>
+
+<div id="pages-panel">
+  <div class="panel-header">
+    <span id="page-count-label">0 pages</span>
+    <div>
+      <button id="select-all">Select all</button>
+      <button id="select-none">Clear</button>
+    </div>
+  </div>
+
+  <div id="page-list"></div>
+
+  <button id="download-btn">⬇ Download new PDF</button>
+  <p class="hint">Kept pages download in the order shown above. Use the arrows to reorder.</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script>
+(function () {
+  const uploadZone = document.getElementById('upload-zone');
+  const fileInput = document.getElementById('file-input');
+  const pagesPanel = document.getElementById('pages-panel');
+  const pageList = document.getElementById('page-list');
+  const pageCountLabel = document.getElementById('page-count-label');
+  const errorMsg = document.getElementById('error-msg');
+  const downloadBtn = document.getElementById('download-btn');
+
+  let originalBytes = null;
+  let pages = [];
+
+  uploadZone.addEventListener('click', () => fileInput.click());
+
+  function showError(msg) {
+    errorMsg.textContent = msg;
+    errorMsg.style.display = 'block';
+  }
+  function clearError() {
+    errorMsg.style.display = 'none';
+  }
+
+  fileInput.addEventListener('change', async (e) => {
+    clearError();
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf') {
+      showError('Please choose a PDF file.');
+      return;
+    }
+    try {
+      const buf = await file.arrayBuffer();
+      originalBytes = buf;
+      const doc = await PDFLib.PDFDocument.load(buf);
+      const count = doc.getPageCount();
+      pages = Array.from({ length: count }, (_, i) => ({ originalIndex: i, keep: true }));
+      renderPages();
+      pagesPanel.style.display = 'block';
+    } catch (err) {
+      showError('Could not read that PDF. Try a different file.');
+    }
+  });
+
+  function renderPages() {
+    pageCountLabel.textContent = pages.length + ' pages, ' + pages.filter(p => p.keep).length + ' selected';
+    pageList.innerHTML = '';
+    pages.forEach((p, idx) => {
+      const row = document.createElement('div');
+      row.className = 'page-row';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = p.keep;
+      checkbox.addEventListener('change', () => { p.keep = checkbox.checked; renderPages(); });
+
+      const label = document.createElement('span');
+      label.textContent = 'Page ' + (p.originalIndex + 1);
+
+      const upBtn = document.createElement('button');
+      upBtn.textContent = '↑';
+      upBtn.disabled = idx === 0;
+      upBtn.addEventListener('click', () => {
+        if (idx > 0) {
+          [pages[idx - 1], pages[idx]] = [pages[idx], pages[idx - 1]];
+          renderPages();
+        }
+      });
+
+      const downBtn = document.createElement('button');
+      downBtn.textContent = '↓';
+      downBtn.disabled = idx === pages.length - 1;
+      downBtn.addEventListener('click', () => {
+        if (idx < pages.length - 1) {
+          [pages[idx + 1], pages[idx]] = [pages[idx], pages[idx + 1]];
+          renderPages();
+        }
+      });
+
+      row.appendChild(checkbox);
+      row.appendChild(label);
+      row.appendChild(upBtn);
+      row.appendChild(downBtn);
+      pageList.appendChild(row);
+    });
+  }
+
+  document.getElementById('select-all').addEventListener('click', () => {
+    pages.forEach(p => p.keep = true);
+    renderPages();
+  });
+  document.getElementById('select-none').addEventListener('click', () => {
+    pages.forEach(p => p.keep = false);
+    renderPages();
+  });
+
+  downloadBtn.addEventListener('click', async () => {
+    clearError();
+    const keptPages = pages.filter(p => p.keep);
+    if (!originalBytes || keptPages.length === 0) {
+      showError('Select at least one page first.');
+      return;
+    }
+    try {
+      const srcDoc = await PDFLib.PDFDocument.load(originalBytes);
+      const newDoc = await PDFLib.PDFDocument.create();
+      const indices = keptPages.map(p => p.originalIndex);
+      const copiedPages = await newDoc.copyPages(srcDoc, indices);
+      copiedPages.forEach(pg => newDoc.addPage(pg));
+      const newBytes = await newDoc.save();
+      const blob = new Blob([newBytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'organized.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      showError('Something went wrong building the new PDF.');
+    }
+  });
+})();
+</script>
+
+</body>
+</html>
